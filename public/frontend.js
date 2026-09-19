@@ -231,18 +231,38 @@ async function runStyleKickThenKickAll(){
       })
     });
     const j = await r.json();
-    if(!j.ok || !j.executionId) return;
+    if(!j.ok || !j.executionId) {
+      console.warn("Style Kick gagal dimulai:", j?.error || j);
+      return;
+    }
+    const styleMeta = el("kickProgressMeta");
+    const styleText = el("kickProgressText");
+    if(styleText) styleText.textContent = "STYLE KICK";
+    if(styleMeta) styleMeta.textContent = `Style Kick: WS 1-6 • target 1 • ${loop} loop • rate max 100/s/socket`;
 
-    // Tunggu sampai Style Kick benar-benar selesai. SSE dipakai agar tidak
-    // melakukan polling cepat berulang ke backend.
+    // Tunggu sampai Style Kick benar-benar selesai. SSE adalah jalur utama,
+    // tetapi jangan menganggap onerror sebagai selesai: browser dapat menutup
+    // SSE sementara dan eksekusi backend masih berjalan. Ada fallback state
+    // check yang ringan supaya Style Kick tidak terlewati.
     await new Promise(resolve => {
       const source = new EventSource(`/api/kick-progress-stream?id=${encodeURIComponent(j.executionId)}`);
       let settled = false;
+      let stateTimer = 0;
       const finish = () => {
         if(settled) return;
         settled = true;
+        if(stateTimer) clearInterval(stateTimer);
         try{ source.close(); }catch{}
         resolve();
+      };
+      const checkState = async () => {
+        if(settled) return;
+        try{
+          const r = await fetch(`/api/kick-progress-state?id=${encodeURIComponent(j.executionId)}`, {cache:"no-store"});
+          if(!r.ok) return;
+          const data = await r.json();
+          if(data.done) finish();
+        }catch{}
       };
       source.onmessage = ev => {
         try{
@@ -251,10 +271,12 @@ async function runStyleKickThenKickAll(){
         }catch{}
       };
       source.onerror = () => {
-        // Jika stream putus, beri kesempatan backend menyelesaikan eksekusi
-        // sebelum lanjut ke KICK ALL.
-        finish();
+        // Jangan finish di sini. Biarkan fallback memeriksa status sampai
+        // backend benar-benar menandai execution.done=true.
+        try{ source.close(); }catch{}
       };
+      stateTimer = setInterval(checkState, 500);
+      void checkState();
     });
 
     if(generation !== styleKickGeneration) return;
