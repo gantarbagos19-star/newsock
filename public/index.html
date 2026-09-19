@@ -128,19 +128,61 @@
   }
 
 <style>
-/* Style Kick controls: compact, balanced, mobile friendly */
-.style-kick-controls{display:grid;grid-template-columns:1fr 1.15fr .9fr;gap:8px;margin-top:7px;align-items:end}
-.style-kick-field{min-width:0}
-.style-kick-label{display:block;text-align:center;margin-bottom:4px;font-size:8px;line-height:1.1;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#64748b}
-.style-kick-control{display:block;width:100%;height:34px;box-sizing:border-box;border:1px solid rgba(71,85,105,.9);border-radius:8px;background:rgba(2,6,23,.82);padding:0 7px;text-align:center;font-size:10px;line-height:32px;color:#e2e8f0;outline:none}
-.style-kick-control:focus{border-color:#3b82f6;box-shadow:0 0 0 1px rgba(59,130,246,.2)}
-@media(max-width:420px){.style-kick-controls{gap:5px}.style-kick-control{height:32px;font-size:9px;padding:0 4px}.style-kick-label{font-size:7px}}
-@media(max-width:350px){.style-kick-controls{grid-template-columns:1fr 1fr .8fr}.style-kick-control{font-size:8px}}
+/* MIGSOCK — tidy Kick / Style Kick controls; visual-only */
+.kick-control-row{grid-template-columns:minmax(0,1fr) repeat(5,minmax(0,54px));column-gap:8px;row-gap:9px}
+.kick-control-row>label{min-width:0}
+.kick-control-row>label>span{display:block!important;min-height:24px;margin-bottom:5px!important;text-align:center!important;font-size:9px!important;line-height:1.15!important;font-weight:800!important;letter-spacing:.04em!important;color:#7f8ea8!important;white-space:normal}
+.kick-control-row #kickTimer,
+.kick-control-row #textdelay,
+.kick-control-row #delayBatch,
+.kick-control-row #textloop,
+.kick-control-row #burstSize{width:100%;height:42px!important;min-width:0;box-sizing:border-box;border-radius:12px!important;padding:0 5px!important;font-size:12px!important}
+.kick-control-row>.min-w-0:first-child{min-width:0}
+.kick-control-row>.min-w-0:first-child #kickAllButton{height:42px!important;border-radius:12px!important;font-size:11px!important;line-height:1.1}
+.kick-control-row>.min-w-0:first-child #timerValue{height:28px!important;margin-top:5px!important;border-radius:10px!important;font-size:10px!important}
+.style-kick-controls{grid-column:1 / span 5;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:1px;align-items:end;min-width:0}
+.style-kick-field{min-width:0;display:block}
+.style-kick-label{display:block;text-align:center;margin-bottom:5px;font-size:9px;line-height:1.15;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#7f8ea8;white-space:nowrap}
+.style-kick-control{display:block;width:100%;height:42px;min-width:0;box-sizing:border-box;border:1px solid rgba(59,130,246,.62);border-radius:12px;background:rgba(2,10,28,.9);padding:0 7px;text-align:center;font-size:11px;line-height:40px;color:#e5edf9;outline:none;box-shadow:inset 0 0 12px rgba(37,99,235,.06)}
+.style-kick-control:focus{border-color:#60a5fa;box-shadow:0 0 0 1px rgba(96,165,250,.3),0 0 12px rgba(37,99,235,.12)}
+.style-kick-controls + .flex.flex-col.gap-1{grid-column:6;align-self:end;justify-self:end;margin-top:1px}
+.style-kick-controls + .flex.flex-col.gap-1 button{width:42px!important;height:42px!important;border-radius:12px!important}
+@media(max-width:430px){
+  .kick-control-row{grid-template-columns:minmax(0,1fr) repeat(5,minmax(0,1fr));column-gap:5px;row-gap:8px}
+  .kick-control-row>label>span{font-size:8px!important;min-height:25px}
+  .kick-control-row #kickTimer,.kick-control-row #textdelay,.kick-control-row #delayBatch,.kick-control-row #textloop,.kick-control-row #burstSize{height:42px!important;font-size:11px!important}
+  .style-kick-controls{gap:6px}
+  .style-kick-label{font-size:8px}
+  .style-kick-control{height:42px;font-size:10px;line-height:40px;padding:0 4px}
+}
+@media(max-width:360px){
+  .kick-control-row{column-gap:4px}
+  .kick-control-row>label>span{font-size:7px!important}
+  .kick-control-row #kickTimer,.kick-control-row #textdelay,.kick-control-row #delayBatch,.kick-control-row #textloop,.kick-control-row #burstSize{font-size:10px!important}
+  .style-kick-controls{gap:4px}
+  .style-kick-label{font-size:7px}
+  .style-kick-control{font-size:9px}
+}
 </style>
 </style>
 
 <style>
 /* MIGSOCK — responsive single-row WebSocket cards */
+/* KICK ALL PROGRESS — visual-only polish */
+#kickProgress{border-color:rgba(37,99,235,.42)!important;background:linear-gradient(180deg,rgba(4,15,38,.94),rgba(2,8,24,.96))!important;box-shadow:inset 0 1px 0 rgba(96,165,250,.06),0 8px 24px rgba(0,0,0,.18);border-radius:16px!important;padding:13px!important}
+#kickProgress>div:first-child{min-height:28px}
+#kickProgressText{font-size:11px!important;font-weight:900!important;padding:4px 9px;border-radius:999px;background:rgba(30,64,175,.18);border:1px solid rgba(59,130,246,.35)}
+#kickProgressBar{height:100%!important;background:linear-gradient(90deg,#2563eb,#38bdf8)!important;box-shadow:0 0 12px rgba(56,189,248,.28)}
+#kickProgress>div:nth-child(2){height:9px!important;border:1px solid rgba(59,130,246,.25);background:rgba(15,23,42,.9)!important;border-radius:999px!important}
+#kickProgressStep{font-size:10px!important;color:#94a3b8!important;padding-top:1px}
+#kickProgress>div:nth-child(4){font-size:10px!important;color:#93c5fd!important;letter-spacing:.04em}
+.kick-troop-progress-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.kick-troop-progress{padding:8px 9px 7px;border:1px solid rgba(59,130,246,.48);border-radius:12px;background:linear-gradient(180deg,rgba(15,38,78,.72),rgba(2,12,30,.9));box-shadow:inset 0 0 16px rgba(37,99,235,.07),0 4px 12px rgba(0,0,0,.12)}
+.kick-troop-progress-head{margin-bottom:7px;font-size:10px;line-height:1.1;color:#c7dcff}
+.kick-troop-progress-head span:first-child{font-size:11px;color:#7db8ff}
+.kick-troop-progress-track{height:7px;border:0;background:rgba(15,23,42,.92);box-shadow:inset 0 1px 3px rgba(0,0,0,.55)}
+.kick-troop-progress-bar{background:linear-gradient(90deg,#2563eb,#38bdf8)!important;box-shadow:0 0 9px rgba(56,189,248,.42)}
+@media(max-width:365px){.kick-troop-progress-grid{gap:6px}.kick-troop-progress{padding:7px 7px 6px}.kick-troop-progress-head{font-size:9px}.kick-troop-progress-head span:first-child{font-size:10px}}
 #accounts{display:flex;flex-direction:column;gap:7px;padding-top:2px}
 .troop-card{position:relative;background:linear-gradient(180deg,rgba(5,13,32,.96),rgba(2,7,20,.96));border:1px solid rgba(30,64,175,.42);border-radius:15px;padding:6px 7px;box-shadow:inset 0 1px 0 rgba(96,165,250,.06),0 6px 18px rgba(0,0,0,.18);overflow:hidden}
 .troop-card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:linear-gradient(180deg,#0ea5e9,#2563eb,#7c3aed);opacity:.75}
@@ -575,7 +617,7 @@ box-sizing:border-box!important;border-radius:0!important;
       <div id="targetList" class="flex-1 min-h-[200px] max-h-[280px] overflow-y-auto bg-slate-950/80 border border-slate-800/80 rounded-xl p-2 space-y-1.5">
         <div class="flex items-center justify-center h-full text-xs text-slate-500 py-10">Belum ada target.</div>
       </div>
-      <div class="grid grid-cols-[minmax(0,1fr)_54px_54px_54px_54px_42px] items-end gap-1.5">
+      <div class="kick-control-row grid grid-cols-[minmax(0,1fr)_54px_54px_54px_54px_42px] items-end gap-1.5">
         <div class="min-w-0">
           <button id="kickAllButton" onclick="kickSelectedTargets()" class="w-full h-9 bg-rose-600 hover:bg-rose-500 text-white font-bold px-2 rounded-lg text-[10px] transition-all shadow-md shadow-rose-600/20 active:scale-95">KICK ALL</button>
           <div id="timerValue" class="mt-1 w-full h-6 flex items-center justify-center rounded-lg bg-slate-950/80 border border-slate-800 text-[9px] font-semibold text-slate-400">60000</div>
