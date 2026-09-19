@@ -169,13 +169,116 @@ function resetTimer(){
   renderTimer();
 }
 
+let styleKickRunning = false;
+let styleKickGeneration = 0;
+
+function isStyleKickOn(){
+  return String(el("styleKick")?.value || "off").toLowerCase() === "on";
+}
+
+function getStyleKickLoop(){
+  return Math.max(1, Math.min(100, parseInt(el("styleKickLoop")?.value || "20", 10) || 20));
+}
+
+function getStyleKickTimer(){
+  const value = Number(el("styleTimer")?.value);
+  return [10000,15000,20000].includes(value) ? value : 15000;
+}
+
+function sleepClient(ms){
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+async function runStyleKickThenKickAll(){
+  if(styleKickRunning) return;
+  styleKickRunning = true;
+  const generation = ++styleKickGeneration;
+
+  try{
+    const room = el("room")?.value.trim();
+    const firstTarget = targets[0];
+    if(!room || !firstTarget) {
+      return;
+    }
+
+    // Style Kick hanya memakai WebSocket fisik 1 sampai 6 yang sedang ONLINE.
+    const styleSlots = accounts
+      .slice(0, 6)
+      .map((a, i) => a.sessionId ? {sessionId:a.sessionId, websocket:i+1} : null)
+      .filter(Boolean);
+
+    if(!styleSlots.length) return;
+
+    const loop = getStyleKickLoop();
+    const styleTimer = getStyleKickTimer();
+    const textdelay = Math.max(0, parseInt(el("textdelay")?.value || "15", 10) || 0);
+    const delayBatch = Math.max(0, parseInt(el("delayBatch")?.value || "25", 10) || 0);
+    const burstSize = Math.max(1, Math.min(10, parseInt(el("burstSize")?.value || "10", 10) || 3));
+
+    const r = await fetch("/api/kick-loop", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        sessionIds: styleSlots.map(x=>x.sessionId),
+        websocketSlots: styleSlots,
+        room,
+        targets:[firstTarget],
+        textdelay,
+        delayBatch,
+        textloop:loop,
+        styleKick:true,
+        burstSize:1
+      })
+    });
+    const j = await r.json();
+    if(!j.ok || !j.executionId) return;
+
+    // Tunggu sampai Style Kick benar-benar selesai. SSE dipakai agar tidak
+    // melakukan polling cepat berulang ke backend.
+    await new Promise(resolve => {
+      const source = new EventSource(`/api/kick-progress-stream?id=${encodeURIComponent(j.executionId)}`);
+      let settled = false;
+      const finish = () => {
+        if(settled) return;
+        settled = true;
+        try{ source.close(); }catch{}
+        resolve();
+      };
+      source.onmessage = ev => {
+        try{
+          const data = JSON.parse(ev.data || "{}");
+          if(data.done) finish();
+        }catch{}
+      };
+      source.onerror = () => {
+        // Jika stream putus, beri kesempatan backend menyelesaikan eksekusi
+        // sebelum lanjut ke KICK ALL.
+        finish();
+      };
+    });
+
+    if(generation !== styleKickGeneration) return;
+
+    // Setelah Style Kick selesai, tunggu sesuai Style Timer, lalu langsung
+    // jalankan KICK ALL normal menggunakan seluruh WebSocket yang ONLINE.
+    await sleepClient(styleTimer);
+    if(generation !== styleKickGeneration) return;
+
+    const button = el("kickAllButton");
+    if(button) button.click();
+    else kickSelectedTargets();
+  }catch(err){
+    console.error("Style Kick:", err);
+  }finally{
+    if(generation === styleKickGeneration) styleKickRunning = false;
+  }
+}
+
 function triggerKickAllIfReached(previousValue = null){
   const configuredMs = getKickTimerMs();
   if(kickTriggeredForTimer || configuredMs < 0) return;
 
-  // Tekan KICK ALL saat countdown sudah mencapai atau melewati
-  // nilai pada textbox Timer. Ini tetap bekerja jika callback timer
-  // melewati angka target karena throttling/background browser.
+  // Countdown <= nilai textbox Timer menjadi satu-satunya pemicu.
   const currentValue = Number(timerValue);
   const previous = previousValue === null ? null : Number(previousValue);
   const reached = currentValue <= configuredMs &&
@@ -183,9 +286,14 @@ function triggerKickAllIfReached(previousValue = null){
 
   if(reached){
     kickTriggeredForTimer = true;
-    const button = el("kickAllButton");
-    if(button) button.click();
-    else kickSelectedTargets();
+    if(isStyleKickOn()){
+      // ON: WS 1-6 -> target 1 -> loop Style Kick -> tunggu Style Timer -> KICK ALL.
+      void runStyleKickThenKickAll();
+    }else{
+      const button = el("kickAllButton");
+      if(button) button.click();
+      else kickSelectedTargets();
+    }
   }
 }
 
