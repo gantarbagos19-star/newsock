@@ -548,17 +548,18 @@ function populateTargetsFromUsers(sourceList){
 
   // Jangan masukkan username dari Socket/Troop 1-10 ke List Target.
   const socketUsernames = new Set(
-    accounts.map(a => normalizeTargetName(a?.username)).filter(Boolean)
+    accounts.slice(0, 10).map(a => normalizeTargetName(a?.username)).filter(Boolean)
   );
 
-  // Kelompokkan username berdasarkan bagian nama sebelum angka di belakang.
-  // "anda1" dan "anda10" sama-sama masuk grup "anda".
+  // Kelompokkan berdasarkan SEMUA huruf username. Semua angka dan semua
+  // separator/pemisah diabaikan, di mana pun posisinya.
+  // Contoh: aug-01-aug, aug_02_aug, aug.03.aug -> grup "augaug".
   const groups = new Map();
   for (const user of users) {
     const normalized = normalizeTargetName(user);
     if (!normalized) continue;
     if (socketUsernames.has(normalized)) continue;
-    const base = normalized.replace(/\d+$/, "");
+    const base = normalized.replace(/\d+/g, "");
     if (!base) continue;
     if (!groups.has(base)) groups.set(base, []);
     groups.get(base).push(user);
@@ -576,12 +577,15 @@ function populateTargetsFromUsers(sourceList){
   }
 
   if (selected) {
-    // Urutkan angka belakang secara numerik: anda1, anda2, ... anda10.
+    // Urutkan berdasarkan SEMUA angka yang ada di username, bukan hanya angka di belakang.
+    // Contoh: anda1, anda2, anda10 atau good.01.boy ... good.10.boy.
     selected.members.sort((a, b) => {
       const na = normalizeTargetName(a), nb = normalizeTargetName(b);
-      const ma = na.match(/(\d+)$/), mb = nb.match(/(\d+)$/);
-      if (ma && mb) {
-        const da = Number(ma[1]), db = Number(mb[1]);
+      const numsA = (na.match(/\d+/g) || []).map(Number);
+      const numsB = (nb.match(/\d+/g) || []).map(Number);
+      const len = Math.max(numsA.length, numsB.length);
+      for (let i = 0; i < len; i++) {
+        const da = numsA[i] ?? -1, db = numsB[i] ?? -1;
         if (da !== db) return da - db;
       }
       return na.localeCompare(nb);
