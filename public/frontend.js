@@ -475,7 +475,7 @@ function renderParticipants(list, merge=true){
       <span class="text-xs sm:text-sm text-slate-200 truncate">${esc(n)}</span>
     </div>
   `).join("");
-  populateTargetsFromUsers();
+  populateTargetsFromUsers(list);
 }
 
 function clearParticipants(){
@@ -535,31 +535,56 @@ function targetNameSimilarity(a, b){
   return Math.max(0.45*charScore+0.35*lcsScore+0.20*editScore, 0.60*prefixScore+0.25*lcsScore+0.15*charScore);
 }
 
-function populateTargetsFromUsers(){
-  const users=[...new Set(participantNames.map(n=>String(n ?? "").trim()).filter(Boolean))];
-  const socketNames=accounts.map(a=>String(a?.username ?? "").trim()).filter(Boolean);
-  const socketKeys=new Set(socketNames.map(normalizeTargetName).filter(Boolean));
-  const candidates=[];
-  const seen=new Set();
+function populateTargetsFromUsers(sourceList){
+  // Auto Target: cari 10 username yang memiliki nama dasar/prefix yang sama.
+  // Contoh: anda1, anda2, ... anda10 -> masukkan 10 target.
+  // Jika tidak ada kelompok dengan minimal 10 username yang memiliki prefix sama,
+  // List Target dikosongkan.
+  const users = Array.isArray(sourceList)
+    ? sourceList.map(n => String(n ?? "").trim()).filter(Boolean)
+    : [...participantNames].map(n => String(n ?? "").trim()).filter(Boolean);
 
-  // Masukkan langsung 10 kandidat terbaik berdasarkan kesamaan huruf/nama.
-  // Tidak memakai threshold yang dapat membuat list target kosong/kurang dari 10.
-  // Jika tersedia >=10 peserta valid, selalu ambil 10 teratas.
-  for(const user of users){
-    const key=normalizeTargetName(user);
-    if(!key || socketKeys.has(key) || seen.has(key)) continue;
-    seen.add(key);
-    let bestScore=0;
-    for(const socketName of socketNames) bestScore=Math.max(bestScore,targetNameSimilarity(socketName,user));
-    candidates.push({name:user,key,score:bestScore});
+  targets.length = 0;
+
+  // Kelompokkan username berdasarkan bagian nama sebelum angka di belakang.
+  // "anda1" dan "anda10" sama-sama masuk grup "anda".
+  const groups = new Map();
+  for (const user of users) {
+    const normalized = normalizeTargetName(user);
+    if (!normalized) continue;
+    const base = normalized.replace(/\d+$/, "");
+    if (!base) continue;
+    if (!groups.has(base)) groups.set(base, []);
+    groups.get(base).push(user);
   }
 
-  candidates.sort((a,b)=>b.score-a.score || b.name.length-a.name.length || a.name.localeCompare(b.name));
-  targets.length=0;
-  for(const candidate of candidates.slice(0,10)) targets.push(candidate.name);
+  // Pilih grup yang memiliki minimal 10 username berbeda.
+  // Prioritaskan grup terbesar; jika seri, pertahankan urutan kemunculan data.
+  let selected = null;
+  for (const [base, members] of groups) {
+    const unique = [...new Map(members.map(name => [normalizeTargetName(name), name])).values()];
+    if (unique.length < 10) continue;
+    if (!selected || unique.length > selected.members.length) {
+      selected = { base, members: unique };
+    }
+  }
+
+  if (selected) {
+    // Urutkan angka belakang secara numerik: anda1, anda2, ... anda10.
+    selected.members.sort((a, b) => {
+      const na = normalizeTargetName(a), nb = normalizeTargetName(b);
+      const ma = na.match(/(\d+)$/), mb = nb.match(/(\d+)$/);
+      if (ma && mb) {
+        const da = Number(ma[1]), db = Number(mb[1]);
+        if (da !== db) return da - db;
+      }
+      return na.localeCompare(nb);
+    });
+    targets.push(...selected.members.slice(0, 10));
+  }
+
   renderTargets();
 }
-
 function renderTargets(){
   el("targetList").innerHTML = targets.length ? targets.map((n, i) => `
     <div class="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-900 border border-slate-800/80">
