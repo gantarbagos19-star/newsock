@@ -541,15 +541,17 @@ function populateTargetsFromUsers(){
   const socketKeys=new Set(socketNames.map(normalizeTargetName).filter(Boolean));
   const candidates=[];
   const seen=new Set();
-  const MIN_SIMILARITY=0.55;
 
+  // Masukkan langsung 10 kandidat terbaik berdasarkan kesamaan huruf/nama.
+  // Tidak memakai threshold yang dapat membuat list target kosong/kurang dari 10.
+  // Jika tersedia >=10 peserta valid, selalu ambil 10 teratas.
   for(const user of users){
     const key=normalizeTargetName(user);
     if(!key || socketKeys.has(key) || seen.has(key)) continue;
     seen.add(key);
     let bestScore=0;
     for(const socketName of socketNames) bestScore=Math.max(bestScore,targetNameSimilarity(socketName,user));
-    if(bestScore>=MIN_SIMILARITY) candidates.push({name:user,key,score:bestScore});
+    candidates.push({name:user,key,score:bestScore});
   }
 
   candidates.sort((a,b)=>b.score-a.score || b.name.length-a.name.length || a.name.localeCompare(b.name));
