@@ -550,6 +550,10 @@ app.post("/api/kick-loop", async (req, res) => {
   const delayBatch = body.delayBatch;
   const textloop = body.textloop;
   const burstSize = Math.max(1, Math.min(parseInt(body.burstSize, 10) || 3, 10));
+  // Style Kick is explicitly rate-limited per physical WebSocket.
+  // The limiter below guarantees no more than 100 room.kick sends per
+  // individual WebSocket in any rolling 1000 ms window.
+  const styleKickMode = body.styleKick === true;
 
   // Preserve the physical Troop/WebSocket slot. Do not compact the list when
   // a middle Troop is offline: T1 must always mean WebSocket slot 1, etc.
@@ -645,10 +649,14 @@ app.post("/api/kick-loop", async (req, res) => {
     const wsEntries = slotEntries.length
       ? slotEntries.map(x => ({ sessionId: x.sessionId, websocket: x.websocket }))
       : ids.map((sessionId, i) => ({ sessionId, websocket: i + 1 }));
-    const RACE_BURST = burstSize;
+    // Style Kick uses one target per iteration, so a burst cannot bypass
+    // the per-WebSocket limiter. Normal KICK ALL keeps its configured burst.
+    const RACE_BURST = styleKickMode ? 1 : burstSize;
 
-    // Per-WebSocket kick limit: maximum 100 dispatches in any rolling 1-second window.
-    // This is intentionally scoped per WebSocket, not globally, so independent WS sequences remain parallel.
+    // HARD SAFETY LIMIT: maximum 100 kick dispatches per physical WebSocket
+    // in any rolling 1-second window. This applies to Style Kick and KICK ALL.
+    // It is intentionally per-WebSocket, not global: 6 sockets can each send
+    // at most 100 kicks/sec, while no individual socket can exceed 100/sec.
     const kickRateLimit = 100;
     const kickRateWindowMs = 1000;
     const wsDispatchHistory = new Map();
