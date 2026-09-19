@@ -546,12 +546,18 @@ function populateTargetsFromUsers(sourceList){
 
   targets.length = 0;
 
+  // Jangan masukkan username dari Socket/Troop 1-10 ke List Target.
+  const socketUsernames = new Set(
+    accounts.map(a => normalizeTargetName(a?.username)).filter(Boolean)
+  );
+
   // Kelompokkan username berdasarkan bagian nama sebelum angka di belakang.
   // "anda1" dan "anda10" sama-sama masuk grup "anda".
   const groups = new Map();
   for (const user of users) {
     const normalized = normalizeTargetName(user);
     if (!normalized) continue;
+    if (socketUsernames.has(normalized)) continue;
     const base = normalized.replace(/\d+$/, "");
     if (!base) continue;
     if (!groups.has(base)) groups.set(base, []);
