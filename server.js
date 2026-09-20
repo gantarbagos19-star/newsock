@@ -788,6 +788,75 @@ app.post("/api/kick-loop", async (req, res) => {
         return { sessionId, websocket, socket: account.socket };
       });
 
+      // STYLE KICK ONLY: satu target, maksimal WS 1-6, loop Style Kick.
+      // Dispatch langsung via WebSocket: tidak menunggu ACK, queue, job_id, atau job.get.
+      // Jalur KICK ALL normal di atas tetap tidak diubah.
+      async function sendStyleKickTarget(runtime, round, sequencePosition) {
+        const { sessionId, websocket, socket } = runtime;
+        const targetIndex = 0;
+        const targetUsername = targetList[targetIndex];
+        const startedAt = Date.now();
+        const result = {
+          sessionId, websocket, loop: round + 1, target: targetUsername,
+          targetIndex: 1, sequencePosition, direction: "forward",
+          ok: false, error: null, totalMs: 0
+        };
+
+        try {
+          if (socket.readyState !== WebSocket.OPEN) throw new Error("WebSocket tidak terhubung.");
+          await waitForKickRateLimit(websocket);
+          socket.send(kickPayloads[targetIndex]);
+
+          dispatchedJobs++;
+          targetProgress[targetIndex].dispatched++;
+          targetProgress[targetIndex].completed = Math.min(
+            targetProgress[targetIndex].total,
+            Math.floor(targetProgress[targetIndex].dispatched / Math.max(1, ids.length))
+          );
+          const wsState = wsProgressBySlot[websocket];
+          if (wsState) wsState.dispatched++;
+          result.ok = true;
+          result.totalMs = Math.max(0, Date.now() - startedAt);
+
+          scheduleKickProgress({
+            phase: "dispatched", loop: round + 1, targetIndex: 1,
+            target: targetUsername, sessionId, websocket, direction: "forward",
+            sendConfirmed: true, noAck: true, burstSize: 1, burst: 1, burstTotal: 1
+          });
+        } catch (e) {
+          result.ok = false;
+          result.error = safeError(e);
+          result.totalMs = Math.max(0, Date.now() - startedAt);
+          failedJobs++;
+          const wsState = wsProgressBySlot[websocket];
+          if (wsState) wsState.failed++;
+
+          scheduleKickProgress({
+            phase: "send_failed", loop: round + 1, targetIndex: 1,
+            target: targetUsername, sessionId, websocket, direction: "forward",
+            sendConfirmed: false, noAck: true, error: result.error
+          });
+        }
+        return result;
+      }
+
+      async function runStyleKickOnly(runtimeList) {
+        const styleResults = [];
+        for (let round = 0; round < loopCount; round++) {
+          // Urutan brute terkontrol: target yang sama dikirim bergantian WS 1-6.
+          for (let i = 0; i < runtimeList.length; i++) {
+            styleResults.push(await sendStyleKickTarget(runtimeList[i], round, i + 1));
+            if (targetDelayMs > 0 && i < runtimeList.length - 1) {
+              await sleep(targetDelayMs);
+            }
+          }
+          if (delayMs > 0 && round < loopCount - 1) {
+            await waitBatchDelay(delayMs);
+          }
+        }
+        return styleResults;
+      }
+
       publishKickProgress(execution, {
         phase: "started",
         completedSteps: 0,
@@ -807,11 +876,19 @@ app.post("/api/kick-loop", async (req, res) => {
         wsProgress: wsProgress.map(x => ({ ...x }))
       });
 
-      // All WebSockets start their own independent 1->10 sequence concurrently.
-      const results = await Promise.all(
-        troopRuntime.map(runtime => runTroop(runtime))
-      );
-      const flatResults = results.map(x => x.results).flat();
+      let flatResults;
+      let results;
+      if (styleKickMode) {
+        // STYLE KICK: hanya 1 target, WS 1-6, delay target + delay batch + loop Style Kick.
+        flatResults = await runStyleKickOnly(troopRuntime);
+        results = [{ sessionId: null, websocket: "STYLE", results: flatResults, steps: flatResults.length, orderedIndices: [0] }];
+      } else {
+        // KICK ALL normal: jalur existing tetap dipakai tanpa perubahan.
+        results = await Promise.all(
+          troopRuntime.map(runtime => runTroop(runtime))
+        );
+        flatResults = results.map(x => x.results).flat();
+      }
       sequenceResults.push(...results);
 
       // Flush any delayed coalesced progress before the final state.
