@@ -750,9 +750,16 @@ function populateTargetsFromUsers(sourceList){
   }
 
   if (selected) {
-    // Urutkan berdasarkan SEMUA angka yang ada di username, bukan hanya angka di belakang.
-    // Contoh: anda1, anda2, anda10 atau good.01.boy ... good.10.boy.
-    selected.members.sort((a, b) => {
+    // Auto Target hanya mengambil username yang mempunyai nomor.
+    // Username dasar tanpa nomor TIDAK boleh masuk Target.
+    // Contoh: kima, kima1 ... kima10 -> Target = kima1 ... kima10.
+    const numbered = selected.members.filter(name => {
+      const normalized = normalizeTargetName(name);
+      return /\d/.test(normalized);
+    });
+
+    // Urutkan berdasarkan angka username, sehingga 1..10 tidak menjadi 1,10,2...
+    numbered.sort((a, b) => {
       const na = normalizeTargetName(a), nb = normalizeTargetName(b);
       const numsA = (na.match(/\d+/g) || []).map(Number);
       const numsB = (nb.match(/\d+/g) || []).map(Number);
@@ -763,7 +770,12 @@ function populateTargetsFromUsers(sourceList){
       }
       return na.localeCompare(nb);
     });
-    targets.push(...selected.members.slice(0, 10));
+
+    // Ambil tepat 10 target bernomor. Jika belum ada 10 username bernomor,
+    // jangan membuat Target Kick parsial.
+    if (numbered.length >= 10) {
+      targets.push(...numbered.slice(0, 10));
+    }
   }
 
   renderTargets();
