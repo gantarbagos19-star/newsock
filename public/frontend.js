@@ -193,98 +193,94 @@ async function runStyleKickThenKickAll(){
   if(styleKickRunning) return;
   styleKickRunning = true;
   const generation = ++styleKickGeneration;
-  let kickAllStarted = false;
-  let canContinueToKickAll = false;
 
-  // Style Timer dimulai TEPAT saat pemicu Countdown <= Timer Kick All
-  // memanggil fungsi Style Kick ini. Jadi timer tidak menunggu Style Kick
-  // selesai terlebih dahulu.
-  const styleTimer = getStyleKickTimer();
-  const styleTimerDeadline = performance.now() + styleTimer;
-
-  const continueToKickAll = async () => {
-    if(kickAllStarted || !canContinueToKickAll) return;
-    if(generation !== styleKickGeneration) return;
-
-    // Tunggu hanya sisa waktu Style Timer. Jika Style Kick sudah
-    // menghabiskan waktu Style Timer, KICK ALL berjalan langsung.
-    const remaining = Math.max(0, styleTimerDeadline - performance.now());
-    await sleepClient(remaining);
-    if(kickAllStarted || generation !== styleKickGeneration) return;
-
-    kickAllStarted = true;
-    const button = el("kickAllButton");
-    if(button) button.click();
-    else kickSelectedTargets();
-  };
-
+  // Urutan Style Kick yang ditetapkan:
+  // Countdown <= Timer Kick All
+  // -> Style Kick berjalan
+  // -> Style Kick selesai
+  // -> Style Timer mulai
+  // -> Style Timer selesai
+  // -> KICK ALL normal.
   try{
-    const room = el("room")?.value.trim();
+    const room = String(el("room")?.value || "").trim();
     const firstTarget = targets[0];
-    if(!room || !firstTarget) {
+
+    if(!room || !firstTarget){
+      console.warn("Style Kick tidak dijalankan: room atau target kosong.");
       return;
     }
-    // Setelah pemicu Style Kick valid, KICK ALL normal menjadi langkah
-    // lanjutan otomatis. Tidak diperlukan pemicu countdown kedua.
-    canContinueToKickAll = true;
 
-    // Style Kick hanya memakai WebSocket fisik 1 sampai 6 yang sedang ONLINE.
     const styleSlots = accounts
       .slice(0, 6)
-      .map((a, i) => a.sessionId ? {sessionId:a.sessionId, websocket:i+1} : null)
+      .map((a, i) => a.sessionId
+        ? {sessionId:String(a.sessionId), websocket:i + 1}
+        : null)
       .filter(Boolean);
 
     const loop = getStyleKickLoop();
 
-    // Jika tidak ada WS Style Kick yang online, lewati Style Kick tetapi
-    // tetap lanjut ke KICK ALL normal setelah Style Timer.
-    if(!styleSlots.length) {
-      const styleMeta = el("kickProgressMeta");
-      const styleText = el("kickProgressText");
-      if(styleText) styleText.textContent = "KICK ALL";
-      if(styleMeta) styleMeta.textContent = "Style Kick: tidak ada WS 1-6 online • lanjut otomatis";
-      await continueToKickAll();
+    if(!styleSlots.length){
+      console.warn("Style Kick tidak dijalankan: WS 1-6 tidak ada yang ONLINE.");
       return;
     }
 
-    const textdelay = Math.max(0, parseInt(el("textdelay")?.value || "15", 10) || 0);
-    const delayBatch = Math.max(0, parseInt(el("delayBatch")?.value || "25", 10) || 0);
-    const burstSize = Math.max(1, Math.min(10, parseInt(el("burstSize")?.value || "10", 10) || 3));
+    const textdelay = Math.max(
+      0, parseInt(el("textdelay")?.value || "15", 10) || 0
+    );
+    const delayBatch = Math.max(
+      0, parseInt(el("delayBatch")?.value || "25", 10) || 0
+    );
+
+    const payload = {
+      sessionIds: styleSlots.map(x => x.sessionId),
+      websocketSlots: styleSlots,
+      room,
+      targets:[String(firstTarget).trim()],
+      textdelay,
+      delayBatch,
+      textloop:loop,
+      styleKick:true,
+      burstSize:1
+    };
+
+    console.log("STYLE KICK START", {
+      websocketSlots: styleSlots.map(x => x.websocket),
+      target: payload.targets[0],
+      loop,
+      styleTimer:getStyleKickTimer()
+    });
 
     const r = await fetch("/api/kick-loop", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        sessionIds: styleSlots.map(x=>x.sessionId),
-        websocketSlots: styleSlots,
-        room,
-        targets:[firstTarget],
-        textdelay,
-        delayBatch,
-        textloop:loop,
-        styleKick:true,
-        burstSize:1
-      })
+      body:JSON.stringify(payload)
     });
-    const j = await r.json();
-    if(!j.ok || !j.executionId) {
-      console.warn("Style Kick gagal dimulai:", j?.error || j);
-      await continueToKickAll();
+
+    let j = {};
+    try { j = await r.json(); } catch {}
+
+    if(!r.ok || !j.ok || !j.executionId){
+      console.warn("Style Kick gagal dimulai:", j?.error || `HTTP ${r.status}`);
       return;
     }
 
-    const styleMeta = el("kickProgressMeta");
-    const styleText = el("kickProgressText");
-    if(styleText) styleText.textContent = "STYLE KICK";
-    if(styleMeta) styleMeta.textContent = `Style Kick: WS 1-6 • target 1 • ${loop} loop • rate max 100/s/socket`;
+    const meta = el("kickProgressMeta");
+    const text = el("kickProgressText");
+    if(text) text.textContent = "STYLE KICK";
+    if(meta){
+      meta.textContent =
+        `Style Kick: WS 1-${styleSlots[styleSlots.length-1].websocket} • target 1 • ${loop} loop`;
+    }
 
-    // Tunggu sampai Style Kick benar-benar selesai. SSE adalah jalur utama,
-    // tetapi fallback state check memastikan proses tidak dianggap selesai
-    // hanya karena koneksi SSE terputus.
+    // Tunggu sampai Style Kick benar-benar selesai.
     await new Promise(resolve => {
-      const source = new EventSource(`/api/kick-progress-stream?id=${encodeURIComponent(j.executionId)}`);
+      const executionId = j.executionId;
+      const source = new EventSource(
+        `/api/kick-progress-stream?id=${encodeURIComponent(executionId)}`
+      );
       let settled = false;
       let stateTimer = 0;
+
       const finish = () => {
         if(settled) return;
         settled = true;
@@ -292,47 +288,56 @@ async function runStyleKickThenKickAll(){
         try{ source.close(); }catch{}
         resolve();
       };
+
       const checkState = async () => {
         if(settled) return;
         try{
-          const r = await fetch(`/api/kick-progress-state?id=${encodeURIComponent(j.executionId)}`, {cache:"no-store"});
-          if(!r.ok) return;
-          const data = await r.json();
+          const rr = await fetch(
+            `/api/kick-progress-state?id=${encodeURIComponent(executionId)}`,
+            {cache:"no-store"}
+          );
+          if(!rr.ok) return;
+          const data = await rr.json();
           if(data.done) finish();
         }catch{}
       };
+
       source.onmessage = ev => {
         try{
           const data = JSON.parse(ev.data || "{}");
           if(data.done) finish();
         }catch{}
       };
+
       source.onerror = () => {
-        // SSE boleh terputus sementara; state backend tetap menjadi sumber
-        // status penyelesaian Style Kick.
-        try{ source.close(); }catch{}
+        // SSE error alone tidak dianggap sebagai Style Kick selesai.
+        void checkState();
       };
-      stateTimer = setInterval(checkState, 500);
+
+      stateTimer = setInterval(checkState, 300);
       void checkState();
     });
 
     if(generation !== styleKickGeneration) return;
 
-    // Style Kick selesai -> Style Timer -> KICK ALL normal otomatis.
-    await continueToKickAll();
+    // Style Timer BARU dimulai setelah Style Kick selesai.
+    const styleTimer = getStyleKickTimer();
+    console.log("STYLE KICK FINISHED -> STYLE TIMER START", {styleTimer});
+    await sleepClient(styleTimer);
+
+    if(generation !== styleKickGeneration) return;
+
+    // Style Timer selesai -> satu-satunya pemicu KICK ALL normal.
+    const button = el("kickAllButton");
+    if(button) button.click();
+    else kickSelectedTargets();
+
   }catch(err){
-    console.error("Style Kick:", err);
+    console.error("Style Kick error:", err);
   }finally{
-    // Jika Style Kick gagal/bermasalah setelah pemicu valid, jangan menunggu
-    // pemicu kedua. Tetap lanjut ke KICK ALL normal.
-    if(canContinueToKickAll && !kickAllStarted && generation === styleKickGeneration){
-      const styleTimer = getStyleKickTimer();
-      await continueToKickAll();
-    }
     if(generation === styleKickGeneration) styleKickRunning = false;
   }
 }
-
 
 function triggerKickAllIfReached(previousValue = null){
   const configuredMs = getKickTimerMs();
