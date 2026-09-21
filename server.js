@@ -118,6 +118,8 @@ function connectAccount(username, password, socketIndex = null) {
     };
 
     socket.on("open", () => {
+      // Reduce TCP packet coalescing latency for command/event synchronization.
+      try { socket._socket?.setNoDelay?.(true); } catch {}
       socket.send(JSON.stringify({ type: "developer.login", username, password }));
     });
 
@@ -395,6 +397,7 @@ app.get("/api/kick-progress-stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
   if (!kickProgressSubscribers.has(id)) kickProgressSubscribers.set(id, new Set());
@@ -550,10 +553,6 @@ app.post("/api/kick-loop", async (req, res) => {
   const delayBatch = body.delayBatch;
   const textloop = body.textloop;
   const burstSize = Math.max(1, Math.min(parseInt(body.burstSize, 10) || 3, 10));
-  // Style Kick is explicitly rate-limited per physical WebSocket.
-  // The limiter below guarantees no more than 100 room.kick sends per
-  // individual WebSocket in any rolling 1000 ms window.
-  const styleKickMode = body.styleKick === true;
 
   // Preserve the physical Troop/WebSocket slot. Do not compact the list when
   // a middle Troop is offline: T1 must always mean WebSocket slot 1, etc.
@@ -639,7 +638,7 @@ app.post("/api/kick-loop", async (req, res) => {
           targetProgress: targetProgress.map(x => ({ ...x })),
           wsProgress: wsProgress.map(x => ({ ...x }))
         });
-      }, 25);
+      }, 50);
     }
 
 
@@ -649,12 +648,10 @@ app.post("/api/kick-loop", async (req, res) => {
     const wsEntries = slotEntries.length
       ? slotEntries.map(x => ({ sessionId: x.sessionId, websocket: x.websocket }))
       : ids.map((sessionId, i) => ({ sessionId, websocket: i + 1 }));
-    // Style Kick uses one target per iteration, so a burst cannot bypass
-    // the per-WebSocket limiter. Normal KICK ALL keeps its configured burst.
-    const RACE_BURST = styleKickMode ? 1 : burstSize;
+    const RACE_BURST = burstSize;
 
     // HARD SAFETY LIMIT: maximum 100 kick dispatches per physical WebSocket
-    // in any rolling 1-second window. This applies to Style Kick and KICK ALL.
+    // in any rolling 1-second window for KICK ALL.
     // It is intentionally per-WebSocket, not global: 6 sockets can each send
     // at most 100 kicks/sec, while no individual socket can exceed 100/sec.
     const kickRateLimit = 100;
@@ -788,27 +785,6 @@ app.post("/api/kick-loop", async (req, res) => {
         return { sessionId, websocket, socket: account.socket };
       });
 
-      // STYLE KICK ONLY: satu target, maksimal WS 1-6, loop Style Kick.
-      // Gunakan sendTarget() yang sama dengan KICK ALL normal agar payload,
-      // validasi socket, rate-limit, dan dispatch kick benar-benar identik.
-      // Tidak menunggu ACK/queue/job.get.
-      async function runStyleKickOnly(runtimeList) {
-        const styleResults = [];
-        for (let round = 0; round < loopCount; round++) {
-          // Urutan brute terkontrol: target yang sama dikirim bergantian WS 1-6.
-          for (let i = 0; i < runtimeList.length; i++) {
-            // Hanya target pertama; seluruh mekanisme kick memakai jalur normal.
-            styleResults.push(await sendTarget(runtimeList[i], round, 0, i + 1));
-            if (targetDelayMs > 0 && i < runtimeList.length - 1) {
-              await sleep(targetDelayMs);
-            }
-          }
-          if (delayMs > 0 && round < loopCount - 1) {
-            await waitBatchDelay(delayMs);
-          }
-        }
-        return styleResults;
-      }
 
       publishKickProgress(execution, {
         phase: "started",
@@ -831,17 +807,11 @@ app.post("/api/kick-loop", async (req, res) => {
 
       let flatResults;
       let results;
-      if (styleKickMode) {
-        // STYLE KICK: hanya 1 target, WS 1-6, delay target + delay batch + loop Style Kick.
-        flatResults = await runStyleKickOnly(troopRuntime);
-        results = [{ sessionId: null, websocket: "STYLE", results: flatResults, steps: flatResults.length, orderedIndices: [0] }];
-      } else {
-        // KICK ALL normal: jalur existing tetap dipakai tanpa perubahan.
-        results = await Promise.all(
-          troopRuntime.map(runtime => runTroop(runtime))
-        );
-        flatResults = results.map(x => x.results).flat();
-      }
+      // KICK ALL normal.
+      results = await Promise.all(
+        troopRuntime.map(runtime => runTroop(runtime))
+      );
+      flatResults = results.map(x => x.results).flat();
       sequenceResults.push(...results);
 
       // Flush any delayed coalesced progress before the final state.
