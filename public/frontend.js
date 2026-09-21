@@ -1,9 +1,5 @@
 
 const accounts = Array.from({length:10},()=>({sessionId:null,username:"",password:"",balance:"-",eventSource:null,status:"OFFLINE"}));
-let sharedEventSource = null;
-let sharedEventRetryMs = 300;
-let sharedEventRetryTimer = 0;
-let sharedEventKey = "";
 const targets = [];
 const participantNames = [];
 const el = id => document.getElementById(id);
@@ -69,7 +65,7 @@ function setBalance(i, label){
   const numeric = value.replace(/[^0-9.,-]/g, "").trim();
   accounts[i].balance = numeric || "-";
   const b = el(`b${i}`);
-  if(b) b.textContent = accounts[i].balance;
+  if(b) { const v = b.querySelector("strong"); if(v) v.textContent = accounts[i].balance; else b.textContent = accounts[i].balance; }
 }
 
 function validRange(){
@@ -119,50 +115,28 @@ function clearFields(){
   renderAccounts();
 }
 
-function refreshSharedEvents(){
-  const active = accounts
-    .map((a, i) => a.sessionId ? `${i}:${a.sessionId}` : null)
-    .filter(Boolean);
-  const key = active.map(x => x.split(":")[1]).join(",");
-  if(!key){
-    if(sharedEventSource) try{ sharedEventSource.close(); }catch{}
-    sharedEventSource = null;
-    sharedEventKey = "";
-    return;
-  }
-  if(sharedEventSource && sharedEventKey === key) return;
-  if(sharedEventSource) try{ sharedEventSource.close(); }catch{}
-  sharedEventSource = null;
-  sharedEventKey = key;
-
-  const es = new EventSource(`/api/events-batch?sessionIds=${encodeURIComponent(key)}`);
-  sharedEventSource = es;
-  es.onopen = () => { sharedEventRetryMs = 300; };
+function openEvents(i){
+  const a = accounts[i];
+  if(!a.sessionId) return;
+  if(a.eventSource) try{ a.eventSource.close(); }catch{}
+  const sessionId = a.sessionId;
+  const es = new EventSource(`/api/events?sessionId=${encodeURIComponent(sessionId)}`);
+  a.eventSource = es;
   es.onmessage = (ev) => {
+    if(accounts[i]?.sessionId !== sessionId) return;
     try{
       const msg = JSON.parse(ev.data);
-      if(!msg.sessionId) return;
-      const i = accounts.findIndex(a => a.sessionId === msg.sessionId);
-      if(i >= 0) handleApiEvent(i, msg);
+      handleApiEvent(i, msg);
     }catch{}
   };
   es.onerror = () => {
     try{ es.close(); }catch{}
-    if(sharedEventSource !== es) return;
-    sharedEventSource = null;
-    const retry = sharedEventRetryMs;
-    sharedEventRetryMs = Math.min(sharedEventRetryMs * 2, 3000);
-    clearTimeout(sharedEventRetryTimer);
-    sharedEventRetryTimer = setTimeout(() => {
-      sharedEventRetryTimer = 0;
-      refreshSharedEvents();
-    }, retry);
+    if(accounts[i]?.sessionId === sessionId){
+      setTimeout(() => {
+        if(accounts[i]?.sessionId === sessionId) openEvents(i);
+      }, 300);
+    }
   };
-}
-
-function openEvents(i){
-  // Kept as the existing call-site API; all troops now share one SSE stream.
-  refreshSharedEvents();
 }
 
 const TIMER_START_MS = 60000;
@@ -682,7 +656,6 @@ async function logoutOne(i, silent=false){
   a.sessionId = null;
   setStatus(i, "OFFLINE");
   setBalance(i, "-");
-  refreshSharedEvents();
   if(!silent) ;
 }
 
@@ -716,6 +689,7 @@ async function loginAll(){
         else if(w?.label) setBalance(i, w.label);
         else setBalance(i, "-");
         setStatus(i, "ONLINE");
+        openEvents(i);
           } else {
         accounts[i].sessionId = null;
         const status = String(item.status || "error").toUpperCase() === "SUSPEND" ? "SUSPEND" : "ERROR";
@@ -729,7 +703,6 @@ async function loginAll(){
   }catch(e){
     for(const a of list) setStatus(a.index, "ERROR");
   }
-  refreshSharedEvents();
   resetKickAllProgress("Progress KICK ALL di-reset setelah LOGIN ALL.");
 }
 
@@ -765,7 +738,6 @@ async function logoutAll(){
     setStatus(i, "OFFLINE");
     setBalance(i, "-");
   }
-  refreshSharedEvents();
   resetKickAllProgress("Progress KICK ALL di-reset karena semua WebSocket logout.");
 }
 
@@ -1003,13 +975,6 @@ async function kickSelectedTargets(){
       progressSource = null;
     };
 
-    const targetProgressCells = new Map();
-    if (targetProgressBox) {
-      targetProgressBox.querySelectorAll("[data-kick-target]").forEach(cell => {
-        targetProgressCells.set(Number(cell.dataset.kickTarget), { cell, span: cell.querySelector("span") });
-      });
-    }
-
     const applyProgressState = (state) => {
       if (progressStopped) return;
       const p = state.progress || {};
@@ -1019,10 +984,9 @@ async function kickSelectedTargets(){
 
       if (targetProgressBox && Array.isArray(p.targetProgress)) {
         p.targetProgress.forEach(tp => {
-          const cached = targetProgressCells.get(Number(tp.targetIndex));
-          if (!cached) return;
-          const cell = cached.cell;
-          const span = cached.span;
+          const cell = targetProgressBox.querySelector(`[data-kick-target="${tp.targetIndex}"]`);
+          if (!cell) return;
+          const span = cell.querySelector("span");
           const done = Number(tp.completed) || 0;
           const dispatched = Math.max(done, Number(tp.dispatched) || 0);
           const total = Number(tp.total) || (textloop * wsCount);
