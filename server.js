@@ -782,70 +782,23 @@ app.post("/api/kick-loop", async (req, res) => {
         if (!account || account.socket.readyState !== WebSocket.OPEN) {
           throw new Error(`WebSocket T${websocket} tidak terhubung.`);
         }
-        if (Array.isArray(account.permissions) && !account.permissions.includes("rooms.kick")) {
-          throw new Error(`Permission rooms.kick tidak tersedia pada T${websocket}.`);
-        }
+        // Jangan blokir berdasarkan metadata permission lokal. KICK ALL normal
+        // juga mengirim langsung melalui WebSocket; metadata permission dapat
+        // tidak tersedia/tidak sinkron walaupun socket sebenarnya bisa kick.
         return { sessionId, websocket, socket: account.socket };
       });
 
       // STYLE KICK ONLY: satu target, maksimal WS 1-6, loop Style Kick.
-      // Dispatch langsung via WebSocket: tidak menunggu ACK, queue, job_id, atau job.get.
-      // Jalur KICK ALL normal di atas tetap tidak diubah.
-      async function sendStyleKickTarget(runtime, round, sequencePosition) {
-        const { sessionId, websocket, socket } = runtime;
-        const targetIndex = 0;
-        const targetUsername = targetList[targetIndex];
-        const startedAt = Date.now();
-        const result = {
-          sessionId, websocket, loop: round + 1, target: targetUsername,
-          targetIndex: 1, sequencePosition, direction: "forward",
-          ok: false, error: null, totalMs: 0
-        };
-
-        try {
-          if (socket.readyState !== WebSocket.OPEN) throw new Error("WebSocket tidak terhubung.");
-          await waitForKickRateLimit(websocket);
-          socket.send(kickPayloads[targetIndex]);
-
-          dispatchedJobs++;
-          targetProgress[targetIndex].dispatched++;
-          targetProgress[targetIndex].completed = Math.min(
-            targetProgress[targetIndex].total,
-            Math.floor(targetProgress[targetIndex].dispatched / Math.max(1, ids.length))
-          );
-          const wsState = wsProgressBySlot[websocket];
-          if (wsState) wsState.dispatched++;
-          result.ok = true;
-          result.totalMs = Math.max(0, Date.now() - startedAt);
-
-          scheduleKickProgress({
-            phase: "dispatched", loop: round + 1, targetIndex: 1,
-            target: targetUsername, sessionId, websocket, direction: "forward",
-            sendConfirmed: true, noAck: true, burstSize: 1, burst: 1, burstTotal: 1
-          });
-        } catch (e) {
-          result.ok = false;
-          result.error = safeError(e);
-          result.totalMs = Math.max(0, Date.now() - startedAt);
-          failedJobs++;
-          const wsState = wsProgressBySlot[websocket];
-          if (wsState) wsState.failed++;
-
-          scheduleKickProgress({
-            phase: "send_failed", loop: round + 1, targetIndex: 1,
-            target: targetUsername, sessionId, websocket, direction: "forward",
-            sendConfirmed: false, noAck: true, error: result.error
-          });
-        }
-        return result;
-      }
-
+      // Gunakan sendTarget() yang sama dengan KICK ALL normal agar payload,
+      // validasi socket, rate-limit, dan dispatch kick benar-benar identik.
+      // Tidak menunggu ACK/queue/job.get.
       async function runStyleKickOnly(runtimeList) {
         const styleResults = [];
         for (let round = 0; round < loopCount; round++) {
           // Urutan brute terkontrol: target yang sama dikirim bergantian WS 1-6.
           for (let i = 0; i < runtimeList.length; i++) {
-            styleResults.push(await sendStyleKickTarget(runtimeList[i], round, i + 1));
+            // Hanya target pertama; seluruh mekanisme kick memakai jalur normal.
+            styleResults.push(await sendTarget(runtimeList[i], round, 0, i + 1));
             if (targetDelayMs > 0 && i < runtimeList.length - 1) {
               await sleep(targetDelayMs);
             }
