@@ -194,12 +194,13 @@ async function runStyleKickThenKickAll(){
   styleKickRunning = true;
   const generation = ++styleKickGeneration;
 
-  // Urutan Style Kick yang ditetapkan:
-  // Countdown <= Timer Kick All
-  // -> Style Kick berjalan
-  // -> Style Kick selesai
-  // -> Style Timer mulai
-  // -> Style Timer selesai
+  // Urutan Style Kick:
+  // Countdown <= textbox KICK ALL + Style Kick ON
+  // -> WS 1-6, satu target
+  // -> Loop Style dari textbox Loop Style
+  // -> Delay Target + Delay Batch seperti KICK ALL normal
+  // -> Style Timer mulai setelah loop selesai
+  // -> Style Timer habis
   // -> KICK ALL normal.
   try{
     const room = String(el("room")?.value || "").trim();
@@ -320,17 +321,32 @@ async function runStyleKickThenKickAll(){
 
     if(generation !== styleKickGeneration) return;
 
-    // Style Timer BARU dimulai setelah Style Kick selesai.
+    // STYLE TIMER dimulai HANYA setelah seluruh loop Style Kick selesai.
+    // Setelah timer ini habis, jalankan KICK ALL melalui jalur normal
+    // (tanpa styleKick flag), sehingga seluruh target + loop + burst normal
+    // tetap memakai logic KICK ALL yang sudah ada.
     const styleTimer = getStyleKickTimer();
-    console.log("STYLE KICK FINISHED -> STYLE TIMER START", {styleTimer});
+    console.log("STYLE KICK FINISHED -> STYLE TIMER START", {
+      styleTimer,
+      loop,
+      target: firstTarget,
+      websocketSlots: styleSlots.map(x => x.websocket)
+    });
+
+    if(generation !== styleKickGeneration) return;
     await sleepClient(styleTimer);
 
     if(generation !== styleKickGeneration) return;
 
-    // Style Timer selesai -> satu-satunya pemicu KICK ALL normal.
+    // Jangan panggil runStyleKickThenKickAll lagi dan jangan mengubah
+    // konfigurasi KICK ALL. Tombol KICK ALL memanggil kickSelectedTargets(),
+    // yang selalu mengirim request tanpa styleKick:true.
     const button = el("kickAllButton");
-    if(button) button.click();
-    else kickSelectedTargets();
+    if(button) {
+      button.click();
+    }else{
+      await kickSelectedTargets();
+    }
 
   }catch(err){
     console.error("Style Kick error:", err);
@@ -350,11 +366,21 @@ function triggerKickAllIfReached(previousValue = null){
     (previous === null || previous >= configuredMs);
 
   if(reached){
+    // Satu trigger saja ketika countdown pertama kali masuk <= nilai
+    // textbox KICK ALL. Tidak menunggu angka tepat sama.
     kickTriggeredForTimer = true;
+
     if(isStyleKickOn()){
-      // ON: WS 1-6 -> target 1 -> loop Style Kick -> tunggu Style Timer -> KICK ALL.
+      // STYLE KICK ON:
+      // countdown <= Kick All
+      // -> WS 1-6, 1 target
+      // -> loop dari Loop Style
+      // -> delay target + delay batch seperti KICK ALL normal
+      // -> Style Timer
+      // -> KICK ALL normal.
       void runStyleKickThenKickAll();
     }else{
+      // STYLE KICK OFF: langsung jalur KICK ALL normal.
       const button = el("kickAllButton");
       if(button) button.click();
       else kickSelectedTargets();
