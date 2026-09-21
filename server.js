@@ -118,8 +118,6 @@ function connectAccount(username, password, socketIndex = null) {
     };
 
     socket.on("open", () => {
-      // Reduce TCP packet coalescing latency for command/event synchronization.
-      try { socket._socket?.setNoDelay?.(true); } catch {}
       socket.send(JSON.stringify({ type: "developer.login", username, password }));
     });
 
@@ -397,7 +395,6 @@ app.get("/api/kick-progress-stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
   if (!kickProgressSubscribers.has(id)) kickProgressSubscribers.set(id, new Set());
@@ -638,7 +635,7 @@ app.post("/api/kick-loop", async (req, res) => {
           targetProgress: targetProgress.map(x => ({ ...x })),
           wsProgress: wsProgress.map(x => ({ ...x }))
         });
-      }, 50);
+      }, 25);
     }
 
 
