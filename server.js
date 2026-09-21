@@ -23,6 +23,7 @@ const API_WS = "wss://developer.mig33.id/developer/ws";
 // The UI can issue ONE batch command that dispatches concurrently to up to 10 sockets.
 const sessions = new Map();
 const subscribers = new Map();
+const batchSubscribers = new Set();
 const kickExecutions = new Map();
 const kickProgressSubscribers = new Map();
 const balanceWaiters = new Map();
@@ -56,11 +57,21 @@ function classifyLoginFailure(err) {
 
 
 function publish(sessionId, msg) {
+  const payloadObj = { ...msg, sessionId };
+  const payload = `data: ${JSON.stringify(payloadObj)}\n\n`;
+
   const set = subscribers.get(sessionId);
-  if (!set) return;
-  const payload = `data: ${JSON.stringify(msg)}\n\n`;
-  for (const res of set) {
-    try { res.write(payload); } catch {}
+  if (set) {
+    for (const res of set) {
+      try { res.write(payload); } catch {}
+    }
+  }
+
+  // A single browser can subscribe to all authenticated troops through one
+  // SSE connection. This avoids maintaining one EventSource per WebSocket.
+  for (const sub of batchSubscribers) {
+    if (!sub.sessions.has(sessionId)) continue;
+    try { sub.res.write(payload); } catch {}
   }
 }
 
@@ -433,6 +444,40 @@ app.get("/api/kick-progress-state", (req, res) => {
   return res.json({ ok: true, executionId: id, done: execution.done, progress: execution.latest, result: execution.done ? execution.result : null });
 });
 
+
+app.get("/api/events-batch", (req, res) => {
+  const sessionIds = String(req.query.sessionIds || "")
+    .split(",")
+    .map(x => x.trim())
+    .filter(Boolean);
+  if (!sessionIds.length || sessionIds.some(id => !sessions.has(id))) {
+    return res.status(401).end();
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  const sub = { res, sessions: new Set(sessionIds) };
+  batchSubscribers.add(sub);
+  res.write(`data: ${JSON.stringify({ type: "stream.ready", sessionIds })}\n\n`);
+
+  for (const sessionId of sessionIds) {
+    const account = sessions.get(sessionId);
+    if (account?.socketIndex === 0 && account.countdownTrigger) {
+      const t = account.countdownTrigger;
+      res.write(`data: ${JSON.stringify({ type: "countdown.trigger", sessionId, socketIndex: 0, event: t.event, receivedAt: t.receivedAt })}\n\n`);
+    }
+  }
+
+  const keepAlive = setInterval(() => { try { res.write(": keep-alive\n\n"); } catch {} }, 20000);
+  req.on("close", () => {
+    clearInterval(keepAlive);
+    batchSubscribers.delete(sub);
+  });
+});
 
 app.get("/api/events", (req, res) => {
   const sessionId = String(req.query.sessionId || "");
