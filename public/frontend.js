@@ -134,7 +134,7 @@ function openEvents(i){
     if(accounts[i]?.sessionId === sessionId){
       setTimeout(() => {
         if(accounts[i]?.sessionId === sessionId) openEvents(i);
-      }, 1000);
+      }, 300);
     }
   };
 }
@@ -169,176 +169,6 @@ function resetTimer(){
   renderTimer();
 }
 
-let styleKickRunning = false;
-let styleKickGeneration = 0;
-
-function isStyleKickOn(){
-  return String(el("styleKick")?.value || "off").toLowerCase() === "on";
-}
-
-function getStyleKickLoop(){
-  return Math.max(1, Math.min(100, parseInt(el("styleKickLoop")?.value || "20", 10) || 20));
-}
-
-function getStyleKickTimer(){
-  const value = Number(el("styleTimer")?.value);
-  return [10000,15000,20000].includes(value) ? value : 15000;
-}
-
-function sleepClient(ms){
-  return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
-}
-
-async function runStyleKickThenKickAll(){
-  if(styleKickRunning) return;
-  styleKickRunning = true;
-  const generation = ++styleKickGeneration;
-
-  // Urutan Style Kick yang ditetapkan:
-  // Countdown <= Timer Kick All
-  // -> Style Kick berjalan
-  // -> Style Kick selesai
-  // -> Style Timer mulai
-  // -> Style Timer selesai
-  // -> KICK ALL normal.
-  try{
-    const room = String(el("room")?.value || "").trim();
-    const firstTarget = targets[0];
-
-    if(!room || !firstTarget){
-      console.warn("Style Kick tidak dijalankan: room atau target kosong.");
-      return;
-    }
-
-    const styleSlots = accounts
-      .slice(0, 6)
-      .map((a, i) => a.sessionId
-        ? {sessionId:String(a.sessionId), websocket:i + 1}
-        : null)
-      .filter(Boolean);
-
-    const loop = getStyleKickLoop();
-
-    if(!styleSlots.length){
-      console.warn("Style Kick tidak dijalankan: WS 1-6 tidak ada yang ONLINE.");
-      return;
-    }
-
-    const textdelay = Math.max(
-      0, parseInt(el("textdelay")?.value || "15", 10) || 0
-    );
-    const delayBatch = Math.max(
-      0, parseInt(el("delayBatch")?.value || "25", 10) || 0
-    );
-
-    const payload = {
-      sessionIds: styleSlots.map(x => x.sessionId),
-      websocketSlots: styleSlots,
-      room,
-      targets:[String(firstTarget).trim()],
-      textdelay,
-      delayBatch,
-      textloop:loop,
-      styleKick:true,
-      burstSize:1
-    };
-
-    console.log("STYLE KICK START", {
-      websocketSlots: styleSlots.map(x => x.websocket),
-      target: payload.targets[0],
-      loop,
-      styleTimer:getStyleKickTimer()
-    });
-
-    const r = await fetch("/api/kick-loop", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-
-    let j = {};
-    try { j = await r.json(); } catch {}
-
-    if(!r.ok || !j.ok || !j.executionId){
-      console.warn("Style Kick gagal dimulai:", j?.error || `HTTP ${r.status}`);
-      return;
-    }
-
-    const meta = el("kickProgressMeta");
-    const text = el("kickProgressText");
-    if(text) text.textContent = "STYLE KICK";
-    if(meta){
-      meta.textContent =
-        `Style Kick: WS 1-${styleSlots[styleSlots.length-1].websocket} • target 1 • ${loop} loop`;
-    }
-
-    // Tunggu sampai Style Kick benar-benar selesai.
-    await new Promise(resolve => {
-      const executionId = j.executionId;
-      const source = new EventSource(
-        `/api/kick-progress-stream?id=${encodeURIComponent(executionId)}`
-      );
-      let settled = false;
-      let stateTimer = 0;
-
-      const finish = () => {
-        if(settled) return;
-        settled = true;
-        if(stateTimer) clearInterval(stateTimer);
-        try{ source.close(); }catch{}
-        resolve();
-      };
-
-      const checkState = async () => {
-        if(settled) return;
-        try{
-          const rr = await fetch(
-            `/api/kick-progress-state?id=${encodeURIComponent(executionId)}`,
-            {cache:"no-store"}
-          );
-          if(!rr.ok) return;
-          const data = await rr.json();
-          if(data.done) finish();
-        }catch{}
-      };
-
-      source.onmessage = ev => {
-        try{
-          const data = JSON.parse(ev.data || "{}");
-          if(data.done) finish();
-        }catch{}
-      };
-
-      source.onerror = () => {
-        // SSE error alone tidak dianggap sebagai Style Kick selesai.
-        void checkState();
-      };
-
-      stateTimer = setInterval(checkState, 300);
-      void checkState();
-    });
-
-    if(generation !== styleKickGeneration) return;
-
-    // Style Timer BARU dimulai setelah Style Kick selesai.
-    const styleTimer = getStyleKickTimer();
-    console.log("STYLE KICK FINISHED -> STYLE TIMER START", {styleTimer});
-    await sleepClient(styleTimer);
-
-    if(generation !== styleKickGeneration) return;
-
-    // Style Timer selesai -> satu-satunya pemicu KICK ALL normal.
-    const button = el("kickAllButton");
-    if(button) button.click();
-    else kickSelectedTargets();
-
-  }catch(err){
-    console.error("Style Kick error:", err);
-  }finally{
-    if(generation === styleKickGeneration) styleKickRunning = false;
-  }
-}
-
 function triggerKickAllIfReached(previousValue = null){
   const configuredMs = getKickTimerMs();
   if(kickTriggeredForTimer || configuredMs < 0) return;
@@ -351,14 +181,9 @@ function triggerKickAllIfReached(previousValue = null){
 
   if(reached){
     kickTriggeredForTimer = true;
-    if(isStyleKickOn()){
-      // ON: WS 1-6 -> target 1 -> loop Style Kick -> tunggu Style Timer -> KICK ALL.
-      void runStyleKickThenKickAll();
-    }else{
-      const button = el("kickAllButton");
-      if(button) button.click();
-      else kickSelectedTargets();
-    }
+    const button = el("kickAllButton");
+    if(button) button.click();
+    else kickSelectedTargets();
   }
 }
 
@@ -1177,7 +1002,7 @@ async function kickSelectedTargets(){
         ? Math.max(0, Math.min(100, Math.round((dispatchCount / dispatchTotal) * 100)))
         : Math.max(0, Math.min(100, fallbackPercent));
       bar.style.width = `${percent}%`;
-      bar.style.transition = "width 100ms linear";
+      bar.style.transition = "width 50ms linear";
 
       if(p.phase === "started" || p.phase === "connected") txt.textContent = "Berjalan";
       else if(p.phase === "dispatched") txt.textContent = "KICK DIKIRIM";

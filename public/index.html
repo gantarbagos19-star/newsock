@@ -128,7 +128,6 @@
   }
 
 <style>
-/* MIGSOCK — tidy Kick / Style Kick controls; visual-only */
 .kick-control-row{grid-template-columns:minmax(0,1fr) repeat(5,minmax(0,54px));column-gap:8px;row-gap:9px}
 .kick-control-row>label{min-width:0}
 .kick-control-row>label>span{display:block!important;min-height:24px;margin-bottom:5px!important;text-align:center!important;font-size:9px!important;line-height:1.15!important;font-weight:800!important;letter-spacing:.04em!important;color:#7f8ea8!important;white-space:normal}
@@ -140,30 +139,16 @@
 .kick-control-row>.min-w-0:first-child{min-width:0}
 .kick-control-row>.min-w-0:first-child #kickAllButton{height:42px!important;border-radius:12px!important;font-size:11px!important;line-height:1.1}
 .kick-control-row>.min-w-0:first-child #timerValue{height:28px!important;margin-top:5px!important;border-radius:10px!important;font-size:10px!important}
-.style-kick-controls{grid-column:1 / span 5;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:1px;align-items:end;min-width:0}
-.style-kick-field{min-width:0;display:block}
-.style-kick-label{display:block;text-align:center;margin-bottom:5px;font-size:9px;line-height:1.15;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#7f8ea8;white-space:nowrap}
-.style-kick-control{display:block;width:100%;height:42px;min-width:0;box-sizing:border-box;border:1px solid rgba(59,130,246,.62);border-radius:12px;background:rgba(2,10,28,.9);padding:0 7px;text-align:center;font-size:11px;line-height:40px;color:#e5edf9;outline:none;box-shadow:inset 0 0 12px rgba(37,99,235,.06)}
-.style-kick-control:focus{border-color:#60a5fa;box-shadow:0 0 0 1px rgba(96,165,250,.3),0 0 12px rgba(37,99,235,.12)}
-.style-kick-controls + .flex.flex-col.gap-1{grid-column:6;align-self:end;justify-self:end;margin-top:1px}
-.style-kick-controls + .flex.flex-col.gap-1 button{width:42px!important;height:42px!important;border-radius:12px!important}
 @media(max-width:430px){
   .kick-control-row{grid-template-columns:minmax(0,1fr) repeat(5,minmax(0,1fr));column-gap:5px;row-gap:8px}
   .kick-control-row>label>span{font-size:8px!important;min-height:25px}
   .kick-control-row #kickTimer,.kick-control-row #textdelay,.kick-control-row #delayBatch,.kick-control-row #textloop,.kick-control-row #burstSize{height:42px!important;font-size:11px!important}
-  .style-kick-controls{gap:6px}
-  .style-kick-label{font-size:8px}
-  .style-kick-control{height:42px;font-size:10px;line-height:40px;padding:0 4px}
 }
 @media(max-width:360px){
   .kick-control-row{column-gap:4px}
   .kick-control-row>label>span{font-size:7px!important}
   .kick-control-row #kickTimer,.kick-control-row #textdelay,.kick-control-row #delayBatch,.kick-control-row #textloop,.kick-control-row #burstSize{font-size:10px!important}
-  .style-kick-controls{gap:4px}
-  .style-kick-label{font-size:7px}
-  .style-kick-control{font-size:9px}
-}
-</style>
+}</style>
 </style>
 
 <style>
@@ -653,27 +638,7 @@ box-sizing:border-box!important;border-radius:0!important;
             <option value="10">10</option>
           </select>
         </label>
-      <div class="style-kick-controls">
-        <label class="style-kick-field">
-          <span class="style-kick-label">Style Kick</span>
-          <select id="styleKick" class="style-kick-control">
-            <option value="off" selected>OFF</option>
-            <option value="on">ON</option>
-          </select>
-        </label>
-        <label class="style-kick-field">
-          <span class="style-kick-label">Style Timer</span>
-          <select id="styleTimer" class="style-kick-control">
-            <option value="10000">10000 ms</option>
-            <option value="15000" selected>15000 ms</option>
-            <option value="20000">20000 ms</option>
-          </select>
-        </label>
-        <label class="style-kick-field">
-          <span class="style-kick-label">Loop Style</span>
-          <input id="styleKickLoop" type="number" min="1" max="100" step="1" value="20" class="style-kick-control" inputmode="numeric">
-        </label>
-      </div>
+
 
         <div class="flex flex-col gap-1">
           <button onclick="resetTimer()" class="bg-blue-950/40 hover:bg-blue-900/50 text-blue-400 border border-blue-800/50 font-bold rounded-lg text-xs transition-all active:scale-95 flex items-center justify-center w-9 h-9 shrink-0" title="Reset Timer" aria-label="Reset Timer">
