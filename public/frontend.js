@@ -134,7 +134,7 @@ function openEvents(i){
     if(accounts[i]?.sessionId === sessionId){
       setTimeout(() => {
         if(accounts[i]?.sessionId === sessionId) openEvents(i);
-      }, 300);
+      }, 1000);
     }
   };
 }
@@ -1002,7 +1002,7 @@ async function kickSelectedTargets(){
         ? Math.max(0, Math.min(100, Math.round((dispatchCount / dispatchTotal) * 100)))
         : Math.max(0, Math.min(100, fallbackPercent));
       bar.style.width = `${percent}%`;
-      bar.style.transition = "width 50ms linear";
+      bar.style.transition = "width 100ms linear";
 
       if(p.phase === "started" || p.phase === "connected") txt.textContent = "Berjalan";
       else if(p.phase === "dispatched") txt.textContent = "KICK DIKIRIM";
