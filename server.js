@@ -651,7 +651,7 @@ app.post("/api/kick-loop", async (req, res) => {
     // in any rolling 1-second window for KICK ALL.
     // It is intentionally per-WebSocket, not global: 6 sockets can each send
     // at most 100 kicks/sec, while no individual socket can exceed 100/sec.
-    const kickRateLimit = 100;
+    const kickRateLimit = 100150
     const kickRateWindowMs = 1000;
     const wsDispatchHistory = new Map();
 
