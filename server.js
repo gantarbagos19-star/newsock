@@ -651,24 +651,37 @@ app.post("/api/kick-loop", async (req, res) => {
     // in any rolling 1-second window for KICK ALL.
     // It is intentionally per-WebSocket, not global: 6 sockets can each send
     // at most 100 kicks/sec, while no individual socket can exceed 100/sec.
-    const kickRateLimit = 100150
+    const kickRateLimit = 150;
     const kickRateWindowMs = 1000;
     const wsDispatchHistory = new Map();
 
     async function waitForKickRateLimit(websocket) {
       let history = wsDispatchHistory.get(websocket);
       if (!history) {
-        history = [];
+        history = { times: [], head: 0 };
         wsDispatchHistory.set(websocket, history);
       }
       while (true) {
         const now = Date.now();
-        while (history.length && now - history[0] >= kickRateWindowMs) history.shift();
-        if (history.length < kickRateLimit) {
-          history.push(now);
+        const times = history.times;
+        let head = history.head;
+        while (head < times.length && now - times[head] >= kickRateWindowMs) head++;
+        history.head = head;
+
+        if (times.length - head < kickRateLimit) {
+          times.push(now);
           return;
         }
-        await sleep(Math.max(1, kickRateWindowMs - (now - history[0])));
+
+        const waitMs = Math.max(1, kickRateWindowMs - (now - times[head]));
+        await sleep(waitMs);
+
+        // Compact only after the stale prefix becomes substantial. This avoids
+        // repeated Array.shift() work while preserving the same rolling-window limit.
+        if (history.head > 256 && history.head * 2 > times.length) {
+          history.times = times.slice(history.head);
+          history.head = 0;
+        }
       }
     }
 
